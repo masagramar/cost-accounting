@@ -1,0 +1,408 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>原価計算ノート</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 帳簿のように「材料マスタ → 商品の原価 → 売価」と縦に読み進める一枚。計算結果は等幅数字で右揃え。 */
+:root {
+  --bg: #F4F6F3;
+  --surface: #FFFFFF;
+  --ink: #1B2320;
+  --muted: #5B6761;
+  --line: #D8DED9;
+  --accent: #1F4E9C;
+  --accent-soft: #E3EBF7;
+  --warn: #A5560B;
+  --warn-soft: #FBEBD6;
+  --good: #1D7A4B;
+  --font-body: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131815; --surface: #1B2220; --ink: #E7ECE8; --muted: #9AA7A0; --line: #2E3834;
+    --accent: #8FB3F0; --accent-soft: #223149; --warn: #F0B36A; --warn-soft: #3A2C17; --good: #6CCB9A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131815; --surface: #1B2220; --ink: #E7ECE8; --muted: #9AA7A0; --line: #2E3834;
+  --accent: #8FB3F0; --accent-soft: #223149; --warn: #F0B36A; --warn-soft: #3A2C17; --good: #6CCB9A;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; font-size: 13px; }
+h2 { font-size: 17px; margin: 0; text-wrap: balance; }
+.sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.seg label { padding: 7px 14px; cursor: pointer; font-size: 13.5px; color: var(--muted); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg input:checked + span { color: var(--accent); font-weight: 700; }
+.seg label:has(input:checked) { background: var(--accent-soft); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th { text-align: left; font-weight: 700; font-size: 12px; color: var(--muted); letter-spacing: .04em; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface); }
+td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+th.r, td.r { text-align: right; }
+input[type=text], input[type=number], select {
+  font: inherit; color: var(--ink); background: var(--bg); border: 1px solid transparent; border-radius: 4px;
+  padding: 6px 7px; width: 100%; min-width: 0;
+}
+input[type=number], .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+input[type=number] { text-align: right; }
+input:hover, select:hover { border-color: var(--line); }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.c-store { min-width: 92px; } .c-name { min-width: 190px; } .c-price { min-width: 84px; } .c-tax { min-width: 70px; }
+.c-qty { min-width: 84px; } .c-unit { min-width: 62px; } .c-basis { min-width: 72px; }
+.res { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; padding-inline: 10px; }
+.res.main { font-weight: 500; color: var(--accent); }
+.res.todo { color: var(--warn); font-family: var(--font-body); font-size: 12.5px; }
+.note { color: var(--muted); font-size: 11.5px; padding: 0 7px 2px; display: block; line-height: 1.3; }
+.note.todo { color: var(--warn); }
+button { font: inherit; cursor: pointer; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 14px; }
+button:hover { border-color: var(--accent); color: var(--accent); }
+button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+button.primary:hover { color: var(--bg); opacity: .9; }
+button.x { border: 0; background: none; color: var(--muted); padding: 4px 8px; font-size: 16px; line-height: 1; }
+button.x:hover { color: var(--warn); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+.actions .spacer { flex: 1; }
+.product-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; padding: 14px 14px 6px; }
+.field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+.field input { background: var(--bg); border-color: var(--line); }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+.cell { background: var(--surface); padding: 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cell .k { font-size: 12px; color: var(--muted); }
+.cell .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 500; }
+.cell .v small { font-size: 13px; color: var(--muted); margin-left: 3px; }
+.cell input { max-width: 150px; background: var(--bg); border-color: var(--line); font-size: 17px; }
+.cell .sm { font-size: 12px; color: var(--muted); }
+.big .v { color: var(--accent); }
+.bar { height: 6px; background: var(--accent-soft); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+.bar.over > i { background: var(--warn); }
+footer { color: var(--muted); font-size: 12.5px; }
+footer ul { margin: 6px 0 0; padding-left: 1.2em; }
+@media (max-width: 560px) { .product-top { grid-template-columns: 1fr; } h1 { font-size: 22px; } }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>原価計算ノート</h1>
+      <p class="sub">レシートの金額を入れると、1個・1gあたり、基準量あたりの原価が出ます。2026年10月23日のレシート3枚を初期値にしています。</p>
+    </div>
+    <div class="seg" role="radiogroup" aria-label="金額の表示">
+      <label><input type="radio" name="tax" value="in" checked><span>税込で表示</span></label>
+      <label><input type="radio" name="tax" value="ex"><span>税抜で表示</span></label>
+    </div>
+  </header>
+
+  <section aria-labelledby="h-mat">
+    <div class="sec-head">
+      <h2 id="h-mat">1. 材料マスタ</h2>
+      <p class="hint">購入価格は税抜で入力。容量が分からない行はオレンジで表示されます。</p>
+    </div>
+    <div class="panel">
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>店</th><th>品名</th><th class="r">購入価格(税抜)</th><th>税率</th>
+              <th class="r">内容量</th><th>単位</th><th class="r">基準量</th>
+              <th class="r">1単位あたり</th><th class="r">基準量あたり</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="mat-body"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button id="add-mat" type="button">材料を追加</button>
+        <button id="copy-mat" type="button">表をコピー</button>
+        <span class="spacer"></span>
+        <button id="reset" type="button">初期値に戻す</button>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-prod">
+    <div class="sec-head">
+      <h2 id="h-prod">2. 商品の原価</h2>
+      <p class="hint">材料マスタから選んで、1回の製造で使う量を入れます。初期値は計算例です。</p>
+    </div>
+    <div class="panel">
+      <div class="product-top">
+        <div class="field"><label for="p-name">商品名</label><input id="p-name" type="text"></div>
+        <div class="field"><label for="p-servings">できあがり数量(個・食)</label><input id="p-servings" type="number" min="1" step="1"></div>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>材料</th><th class="r">使用量</th><th>単位</th><th class="r">金額</th><th></th></tr></thead>
+          <tbody id="line-body"></tbody>
+        </table>
+      </div>
+      <div class="actions"><button id="add-line" type="button">材料を行に追加</button></div>
+      <div class="summary">
+        <div class="cell"><span class="k">材料費の合計</span><span class="v" id="o-total">—</span></div>
+        <div class="cell big"><span class="k">1個あたり原価</span><span class="v" id="o-per">—</span></div>
+        <div class="cell"><span class="k">売価(円)</span><input id="p-price" type="number" min="0" step="1" aria-label="売価"><span class="sm" id="o-profit">—</span></div>
+        <div class="cell"><span class="k">原価率</span><span class="v" id="o-rate">—</span><div class="bar" id="o-bar"><i></i></div></div>
+        <div class="cell"><span class="k">目標原価率(%)</span><input id="p-target" type="number" min="1" max="100" step="1" aria-label="目標原価率"><span class="sm" id="o-rec">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <strong>計算の式</strong>
+    <ul>
+      <li>1単位あたり = 購入価格 ÷ 内容量　基準量あたり = 1単位あたり × 基準量(例: ジュース180ml、ホイップ10g)</li>
+      <li>税込表示は、行ごとの税率(食品8%、その他10%)を掛けます。原価率と推奨売価は、表示中の金額で計算します。</li>
+      <li>入力はこのブラウザに自動で保存されます。別の端末には引き継がれません。</li>
+    </ul>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var KEY = "genka-note-v1";
+  var DEF_MAT = [
+    // 店, 品名, 税抜価格, 税率, 内容量, 単位, 基準量, 備考
+    ["業務スーパー","トーラクホイップ プレーン",348,8,1000,"g",10,"1kg入り。基準量は1回に使う10g"],
+    ["100円ショップ","パーティーモール(ホワイト)",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","フィルムバルーン(ハート)",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","袋入ミニスプーン",100,10,20,"本",1,""],
+    ["100円ショップ","カラフルマドラースプーン",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","袋入り先割れスプーン(黒)",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","電子レンジに使えるバガス",100,10,1,"袋",1,"入数を確認(品名はレシートの略称)"],
+    ["100円ショップ","こめじ つやつやごはん",100,8,1,"個",1,""],
+    ["100円ショップ","ハチ食品 ウチの定番カレー",100,8,1,"個",1,""],
+    ["100円ショップ","コンフェティバルーン",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","ツイストバルーン",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","キラキラカーテン",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","フタ付クリアカップ",100,10,7,"個",1,""],
+    ["100円ショップ","耐熱ペーパーカップ(柄付)",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","プラカップ",100,10,16,"個",1,""],
+    ["100円ショップ","曲がるストロー(パステル)",100,10,1,"袋",1,"入数を確認"],
+    ["100円ショップ","ペーパータオル",100,10,150,"枚",1,""],
+    ["TRIAL","なめらかプリン",128,8,1,"個",1,""],
+    ["TRIAL","みどりカフェゼリー",131,8,1,"個",1,""],
+    ["TRIAL","がぶ飲みメロンクリーム",218,8,0,"ml",180,"容量を入力"],
+    ["TRIAL","午後の紅茶ミルクティー",188,8,0,"ml",180,"容量を入力"],
+    ["TRIAL","ボスホームカフェ 無糖",208,8,2000,"ml",180,"2L"],
+    ["TRIAL","コカ・コーラ",188,8,1500,"ml",180,"1.5L"],
+    ["TRIAL","ミニ濃厚チョコブラウニー",238,8,1,"個",1,""],
+    ["TRIAL","カレー中辛",98,8,1,"個",1,""]
+  ];
+  function defaults() {
+    return {
+      taxIn: true,
+      mats: DEF_MAT.map(function (r, i) {
+        return { id: "d" + i, store: r[0], name: r[1], price: r[2], tax: r[3], qty: r[4], unit: r[5], basis: r[6], note: r[7] };
+      }),
+      prod: {
+        name: "プリンパフェ(計算例)", servings: 1, price: 300, target: 35,
+        lines: [{ mid: "d17", amt: 1 }, { mid: "d0", amt: 10 }, { mid: "d14", amt: 1 }, { mid: "d3", amt: 1 }]
+      }
+    };
+  }
+  var S;
+  try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
+  if (!S || !S.mats || !S.prod) S = defaults();
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
+  function num(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; }
+  function fmt(n, d) {
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("ja-JP", { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d });
+  }
+  function factor(m) { return S.taxIn ? 1 + num(m.tax) / 100 : 1; }
+  function unitCost(m) { return num(m.qty) > 0 ? num(m.price) / num(m.qty) * factor(m) : NaN; }
+  function byId(id) { return S.mats.filter(function (m) { return m.id === id; })[0]; }
+
+  /* ---- 材料マスタ ---- */
+  function renderMats() {
+    var h = "";
+    S.mats.forEach(function (m) {
+      h += '<tr data-id="' + m.id + '">' +
+        '<td class="c-store"><input type="text" data-f="store" value="' + esc(m.store) + '" aria-label="店"></td>' +
+        '<td class="c-name"><input type="text" data-f="name" value="' + esc(m.name) + '" aria-label="品名"><span class="note" data-r="note"></span></td>' +
+        '<td class="c-price"><input type="number" min="0" step="any" data-f="price" value="' + esc(m.price) + '" aria-label="購入価格"></td>' +
+        '<td class="c-tax"><select data-f="tax" aria-label="税率"><option value="8"' + (num(m.tax) === 8 ? " selected" : "") + '>8%</option><option value="10"' + (num(m.tax) === 10 ? " selected" : "") + '>10%</option></select></td>' +
+        '<td class="c-qty"><input type="number" min="0" step="any" data-f="qty" value="' + esc(m.qty) + '" aria-label="内容量"></td>' +
+        '<td class="c-unit"><input type="text" data-f="unit" value="' + esc(m.unit) + '" aria-label="単位"></td>' +
+        '<td class="c-basis"><input type="number" min="0" step="any" data-f="basis" value="' + esc(m.basis) + '" aria-label="基準量"></td>' +
+        '<td class="res" data-r="unit"></td><td class="res main" data-r="basis"></td>' +
+        '<td><button class="x" type="button" data-del="' + m.id + '" aria-label="この材料を削除">×</button></td></tr>';
+    });
+    $("mat-body").innerHTML = h;
+    calcMats();
+  }
+  function calcMats() {
+    S.mats.forEach(function (m) {
+      var tr = $("mat-body").querySelector('tr[data-id="' + m.id + '"]');
+      if (!tr) return;
+      var u = unitCost(m), ok = isFinite(u);
+      var cu = tr.querySelector('[data-r="unit"]'), cb = tr.querySelector('[data-r="basis"]'), nt = tr.querySelector('[data-r="note"]');
+      if (ok) {
+        cu.textContent = fmt(u) + " 円/" + (m.unit || "単位");
+        cb.textContent = fmt(u * num(m.basis)) + " 円/" + fmt(num(m.basis), num(m.basis) % 1 ? 1 : 0) + (m.unit || "");
+        cu.classList.remove("todo"); cb.classList.add("main");
+      } else {
+        cu.textContent = "容量を入力"; cb.textContent = "—"; cu.classList.add("todo");
+      }
+      nt.textContent = m.note || ""; nt.className = "note" + (/確認|入力/.test(m.note || "") && (!ok || /確認/.test(m.note)) ? " todo" : "");
+    });
+    refreshSelects();
+    calcProd();
+  }
+
+  /* ---- 商品の原価 ---- */
+  function optionsFor(sel) {
+    return S.mats.map(function (m) {
+      return '<option value="' + m.id + '"' + (m.id === sel ? " selected" : "") + ">" + esc(m.name) + "</option>";
+    }).join("");
+  }
+  function renderLines() {
+    var h = "";
+    S.prod.lines.forEach(function (l, i) {
+      h += '<tr data-i="' + i + '">' +
+        '<td style="min-width:200px"><select data-lf="mid" aria-label="材料">' + optionsFor(l.mid) + "</select></td>" +
+        '<td style="min-width:90px"><input type="number" min="0" step="any" data-lf="amt" value="' + esc(l.amt) + '" aria-label="使用量"></td>' +
+        '<td data-lr="unit" style="white-space:nowrap;color:var(--muted)"></td>' +
+        '<td class="res main" data-lr="cost"></td>' +
+        '<td><button class="x" type="button" data-ldel="' + i + '" aria-label="この行を削除">×</button></td></tr>';
+    });
+    $("line-body").innerHTML = h;
+    calcProd();
+  }
+  function refreshSelects() {
+    var sels = $("line-body").querySelectorAll("select");
+    for (var i = 0; i < sels.length; i++) {
+      var l = S.prod.lines[i]; if (!l) continue;
+      sels[i].innerHTML = optionsFor(l.mid);
+    }
+  }
+  function calcProd() {
+    var total = 0, rows = $("line-body").querySelectorAll("tr");
+    S.prod.lines.forEach(function (l, i) {
+      var m = byId(l.mid), tr = rows[i]; if (!tr) return;
+      var u = m ? unitCost(m) : NaN, c = u * num(l.amt);
+      tr.querySelector('[data-lr="unit"]').textContent = m ? m.unit : "";
+      var cc = tr.querySelector('[data-lr="cost"]');
+      cc.textContent = isFinite(c) ? fmt(c) + " 円" : "容量を入力";
+      cc.classList.toggle("todo", !isFinite(c));
+      if (isFinite(c)) total += c;
+    });
+    var sv = Math.max(1, num(S.prod.servings)), per = total / sv, price = num(S.prod.price);
+    $("o-total").innerHTML = fmt(total) + "<small>円</small>";
+    $("o-per").innerHTML = fmt(per) + "<small>円</small>";
+    var rate = price > 0 ? per / price * 100 : NaN;
+    $("o-rate").innerHTML = isFinite(rate) ? fmt(rate, 1) + "<small>%</small>" : "—";
+    $("o-profit").textContent = price > 0 ? "1個の粗利 " + fmt(price - per) + " 円" : "売価を入れると原価率が出ます";
+    var bar = $("o-bar"), t = num(S.prod.target);
+    bar.firstElementChild.style.width = Math.min(100, isFinite(rate) ? rate : 0) + "%";
+    bar.classList.toggle("over", isFinite(rate) && t > 0 && rate > t);
+    $("o-rec").textContent = t > 0 ? "目標に合う売価 約 " + fmt(Math.ceil(per / (t / 100)), 0) + " 円" : "—";
+  }
+
+  /* ---- イベント ---- */
+  $("mat-body").addEventListener("input", function (e) {
+    var f = e.target.getAttribute("data-f"), tr = e.target.closest("tr");
+    if (!f || !tr) return;
+    var m = byId(tr.getAttribute("data-id")); if (!m) return;
+    var numeric = ["price", "tax", "qty", "basis"].indexOf(f) >= 0;
+    m[f] = numeric ? num(e.target.value) : e.target.value;
+    if (f === "qty" && num(m.qty) > 0 && /容量を入力/.test(m.note || "")) m.note = "";
+    save(); calcMats();
+  });
+  $("mat-body").addEventListener("click", function (e) {
+    var id = e.target.getAttribute("data-del"); if (!id) return;
+    S.mats = S.mats.filter(function (m) { return m.id !== id; });
+    S.prod.lines = S.prod.lines.filter(function (l) { return l.mid !== id; });
+    save(); renderMats(); renderLines();
+  });
+  $("add-mat").addEventListener("click", function () {
+    S.mats.push({ id: "m" + Date.now(), store: "", name: "新しい材料", price: 0, tax: 8, qty: 1, unit: "個", basis: 1, note: "" });
+    save(); renderMats();
+    var rows = $("mat-body").querySelectorAll("tr"); var last = rows[rows.length - 1];
+    if (last) { last.scrollIntoView({ block: "nearest" }); last.querySelector('[data-f="name"]').select(); }
+  });
+  $("line-body").addEventListener("input", function (e) {
+    var f = e.target.getAttribute("data-lf"), tr = e.target.closest("tr"); if (!f || !tr) return;
+    var l = S.prod.lines[+tr.getAttribute("data-i")]; if (!l) return;
+    l[f] = f === "amt" ? num(e.target.value) : e.target.value;
+    save(); calcProd();
+  });
+  $("line-body").addEventListener("click", function (e) {
+    var i = e.target.getAttribute("data-ldel"); if (i == null) return;
+    S.prod.lines.splice(+i, 1); save(); renderLines();
+  });
+  $("add-line").addEventListener("click", function () {
+    if (!S.mats.length) return;
+    S.prod.lines.push({ mid: S.mats[0].id, amt: 1 }); save(); renderLines();
+  });
+  [["p-name", "name", false], ["p-servings", "servings", true], ["p-price", "price", true], ["p-target", "target", true]].forEach(function (a) {
+    $(a[0]).addEventListener("input", function (e) {
+      S.prod[a[1]] = a[2] ? num(e.target.value) : e.target.value; save(); calcProd();
+    });
+  });
+  document.querySelectorAll('input[name="tax"]').forEach(function (r) {
+    r.addEventListener("change", function () { S.taxIn = r.value === "in"; save(); calcMats(); });
+  });
+  var resetT;
+  $("reset").addEventListener("click", function () {
+    var b = $("reset");
+    if (b.getAttribute("data-armed") !== "1") {
+      b.setAttribute("data-armed", "1"); b.textContent = "もう一度押すと初期化します";
+      resetT = setTimeout(function () { b.removeAttribute("data-armed"); b.textContent = "初期値に戻す"; }, 4000);
+      return;
+    }
+    clearTimeout(resetT); b.removeAttribute("data-armed"); b.textContent = "初期値に戻す";
+    S = defaults(); save(); init();
+  });
+  $("copy-mat").addEventListener("click", function () {
+    var b = $("copy-mat");
+    var head = ["店", "品名", "購入価格(税抜)", "税率", "内容量", "単位", "基準量", "1単位あたり", "基準量あたり"].join("\t");
+    var rows = S.mats.map(function (m) {
+      var u = unitCost(m);
+      return [m.store, m.name, m.price, m.tax + "%", m.qty, m.unit, m.basis, isFinite(u) ? u.toFixed(2) : "", isFinite(u) ? (u * num(m.basis)).toFixed(2) : ""].join("\t");
+    });
+    var text = head + "\n" + rows.join("\n");
+    function done(msg) { b.textContent = msg; setTimeout(function () { b.textContent = "表をコピー"; }, 1800); }
+    function fallback() {
+      var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+      var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta); done(ok ? "コピーしました" : "コピーできませんでした");
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done("コピーしました"); }, fallback);
+    } else fallback();
+  });
+
+  function init() {
+    document.querySelector('input[name="tax"][value="' + (S.taxIn ? "in" : "ex") + '"]').checked = true;
+    $("p-name").value = S.prod.name; $("p-servings").value = S.prod.servings;
+    $("p-price").value = S.prod.price; $("p-target").value = S.prod.target;
+    renderMats(); renderLines();
+  }
+  init();
+})();
+</script>
+
+</body></html>
